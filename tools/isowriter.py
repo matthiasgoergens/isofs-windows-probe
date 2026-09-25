@@ -332,6 +332,7 @@ class Image:
                     lba += (len(sdata) + S - 1) // S
                 data_lba[id(it)] = locs
         alloc_files(self.root)
+        lba += 150      # trailing zero padding, as mkisofs -pad / xorriso write
         total = lba
         img = bytearray(total * S)
         for at, b in blobs:
@@ -401,6 +402,10 @@ class Image:
         out = bytearray()
         for d in order:
             n = b'\0' if d is self.root else self.encname(d, t)
+            if t == 'j' and getattr(d, 'pt_joliet', None) is not None:
+                # Deliberately inconsistent: path table name differs from
+                # the directory record's name.
+                n = d.pt_joliet.encode('utf-16-be')
             ext = dir_lba.get((t, id(d)), 0)
             pn = num[id(parent[id(d)])]
             if little:

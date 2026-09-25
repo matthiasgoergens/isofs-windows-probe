@@ -139,6 +139,10 @@ def walk(img, tree, root, subtree=None, do_hash=True):
                 continue
             name = name_of(r)
             flags = r[25]
+            is_link = False
+            if rr:
+                _p = 33 + nl + (1 - nl % 2)
+                is_link = 'SL' in rr_parse(r[_p:])[1]
             e_ext, e_len = u32(r, 2), u32(r, 10)
             if pending is not None and pending['name'] == name:
                 pending['sections'].append((e_ext, e_len))
@@ -147,7 +151,7 @@ def walk(img, tree, root, subtree=None, do_hash=True):
                 if pending is not None:
                     finish(pending, emit)
                 pending = {'name': name, 'dir': bool(flags & 2), 'sections': [(e_ext, e_len)],
-                           'where': [(b, off)], 'path': path + [name]}
+                           'where': [(b, off)], 'path': path + [name], 'symlink': is_link}
             if not flags & 0x80:
                 finish(pending, emit)
                 pending = None
@@ -180,6 +184,8 @@ def walk(img, tree, root, subtree=None, do_hash=True):
             return
         if m != 'in':
             return
+        if p.get('symlink'):
+            e['symlink'] = True
         e['size'] = sum(ln for _, ln in p['sections'])
         e['sections'] = len(p['sections'])
         if len(p['sections']) > 1:

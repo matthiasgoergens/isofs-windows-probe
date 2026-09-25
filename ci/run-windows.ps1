@@ -62,7 +62,7 @@ foreach ($iso in Get-ChildItem -Path $ImgDir -Filter *.iso | Sort-Object Name) {
             if ($vol -and $vol.DriveLetter) { break }
             Start-Sleep -Seconds 1
         }
-        $di | Get-DiskImage | Select-Object * | ConvertTo-Json | Out-File -Encoding utf8 (Join-Path $d 'diskimage.json')
+        $di | Get-DiskImage | Select-Object * | ConvertTo-Json -Depth 4 -WarningAction SilentlyContinue | Out-File -Encoding utf8 (Join-Path $d 'diskimage.json')
         if (-not $vol) { 'no volume appeared' | Out-File (Join-Path $d 'mount-error.txt'); continue }
         $vol | Select-Object DriveLetter, FileSystem, FileSystemType, FileSystemLabel, Size, SizeRemaining, HealthStatus, OperationalStatus, DriveType |
             ConvertTo-Json | Out-File -Encoding utf8 (Join-Path $d 'volume.json')
@@ -74,7 +74,7 @@ foreach ($iso in Get-ChildItem -Path $ImgDir -Filter *.iso | Sort-Object Name) {
         if ($sub.ContainsKey($iso.Name)) { $largs += @('--subtree', $sub[$iso.Name]) }
         & python @largs 2>&1 | Tee-Object -FilePath (Join-Path $d 'lister.log')
         if (-not $sub.ContainsKey($iso.Name)) { PsListing $root (Join-Path $d 'ps-listing.json') }
-        & cmd /c "dir /s /a $root" 2>&1 | Out-File -Encoding utf8 (Join-Path $d 'dir.txt')
+        & cmd /c "dir /s /a $($vol.DriveLetter):" 2>&1 | Out-File -Encoding utf8 (Join-Path $d 'dir.txt')
     } catch {
         $_ | Out-String | Out-File -Encoding utf8 (Join-Path $d 'mount-error.txt')
         Write-Host "  mount error: $_"

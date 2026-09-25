@@ -197,6 +197,17 @@ write('treeid-rr-p', Image(treeid(True)(), joliet=False, rockridge=True))
 write('treeid-j', Image(treeid(False)(), joliet=True))
 
 
+# ------------------------------------------ path table vs directory record
+def ptmismatch():
+    a = dir_('ADIR', [f('INNER.TXT;1', 700, 'inner-a.txt;1')], joliet='adir-record-name')
+    a.pt_joliet = 'adir-PATHTABLE-name'   # same length class, different name
+    b = dir_('BDIR', [f('INNER.TXT;1', 800, 'inner-b.txt;1')], joliet='bdir-consistent')
+    return [a, b]
+
+
+write('ptmismatch-j', Image(ptmismatch(), joliet=True))
+
+
 # ------------------------------------------------------- xorriso images
 def xorriso_images():
     if not shutil.which('xorriso'):

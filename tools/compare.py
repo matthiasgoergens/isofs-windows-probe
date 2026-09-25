@@ -80,7 +80,7 @@ def compare_tree(oents, lents):
         oe, le = oents[oi], lents[li]
         if le.get('read_error'):
             res['read_errors'].append({'path': oe['path'], 'error': le['read_error']})
-        if not oe['dir']:
+        if not oe['dir'] and not oe.get('symlink'):
             if le.get('size') != oe['size']:
                 res['size_mismatch'].append({'path': oe['path'], 'oracle': oe['size'],
                                              'os': le.get('size')})

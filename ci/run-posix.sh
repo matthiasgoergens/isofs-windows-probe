@@ -29,6 +29,7 @@ $SUDO mkdir -p $MNT
             echo "cd9660.fs: $(ls /System/Library/Filesystems | grep -i -e cd9660 -e udf | tr '\n' ' ')";;
     FreeBSD) freebsd-version -kru;;
     NetBSD|OpenBSD) sysctl kern.version;;
+    Linux) cat /etc/os-release; echo "kernel: $(uname -r)";;
     esac
     echo "python: $($PY --version 2>&1)"
 } > "$OUT/sysinfo.txt" 2>&1
@@ -115,9 +116,32 @@ for iso in "$IMGDIR"/*.iso; do
         done
         mdconfig -d -u "$md"
         ;;
+    Linux)
+        # GitHub-hosted runner VM, not a developer machine.
+        for v in default nojoliet norock utf8 norock-utf8; do
+            d=$OUT/$base@$v; mkdir -p "$d"
+            case $v in
+            default) o="";;
+            nojoliet) o=",nojoliet";;
+            norock) o=",norock";;
+            utf8) o=",iocharset=utf8";;
+            norock-utf8) o=",norock,iocharset=utf8";;
+            esac
+            if $SUDO mount -t iso9660 -o "loop,ro$o" "$iso" $MNT > "$d/mount.log" 2>&1; then
+                mount | grep " on $MNT " > "$d/fstype.txt"
+                echo "options: $o" >> "$d/fstype.txt"
+                list_and_compare "$d" $MNT "$iso"
+                $SUDO umount $MNT
+            else
+                echo "mount -o loop,ro$o failed: $(cat "$d/mount.log")" > "$d/mount-error.txt"
+            fi
+            $SUDO dmesg 2>/dev/null | tail -n 5 > "$d/dmesg-tail.txt"
+        done
+        ;;
     NetBSD|OpenBSD)
-        if [ $OS = NetBSD ]; then vndconfig vnd0 "$iso"; parts="a d c"; else vnconfig vnd0 "$iso"; parts="c a"; fi
-        for v in default nojoliet norrip; do
+        if [ $OS = NetBSD ]; then vndconfig vnd0 "$iso"; parts="a d c"; vars="default nojoliet norrip";
+        else vnconfig vnd0 "$iso"; parts="c a"; vars="default"; fi   # OpenBSD rejects -o nojoliet/norrip
+        for v in $vars; do
             d=$OUT/$base@$v; mkdir -p "$d"
             case $v in default) o="";; *) o="-o $v";; esac
             ok=""
