@@ -1,0 +1,218 @@
+name: probe
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y xorriso
+      - run: xorriso -version | head -n 2
+      - run: python3 tools/make_images.py out
+      - run: ls -la out && sha256sum out/*.iso
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images
+          path: out/
+
+  windows:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: imgs
+      - shell: pwsh
+        run: ./ci/run-windows.ps1 -ImgDir imgs -OutDir results
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}
+          path: results/
+
+  macos:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: imgs
+      - run: sh ci/run-posix.sh imgs results
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}
+          path: results/
+
+  freebsd:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: imgs
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.3"
+          usesh: true
+          prepare: pkg install -y python3
+          run: sh ci/run-posix.sh imgs results-freebsd
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-freebsd
+          path: results-freebsd/
+
+  netbsd:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: imgs
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          prepare: /usr/sbin/pkg_add python312 || /usr/sbin/pkg_add python311 || pkgin -y install python312
+          run: sh ci/run-posix.sh imgs results-netbsd
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-netbsd
+          path: results-netbsd/
+
+  openbsd:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
+          path: imgs
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg_add -I python%3.12 || pkg_add -I python%3.11 || pkg_add -I python3
+          run: sh ci/run-posix.sh imgs results-openbsd
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-openbsd
+          path: results-openbsd/
+
+  # ---- optional: the three real discs, fetched partially (a few MB each) ----
+  fetch-real:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh ci/fetch-real.sh real
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real
+          path: real/
+
+  real-windows:
+    needs: fetch-real
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: real
+          path: real
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force imgs | Out-Null
+          Get-ChildItem real -Filter *.partial | ForEach-Object {
+            python tools/partial.py expand $_.FullName ("imgs/" + $_.BaseName + ".iso")
+          }
+          Copy-Item real/*.oracle.json imgs/
+          ./ci/run-windows.ps1 -ImgDir imgs -OutDir results -Subtrees real/subtrees.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-results-${{ matrix.os }}
+          path: results/
+
+  real-macos:
+    needs: fetch-real
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: real
+          path: real
+      - run: sh ci/expand-real.sh real imgs && sh ci/run-posix.sh imgs results real/subtrees.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-results-${{ matrix.os }}
+          path: results/
+
+  real-freebsd:
+    needs: fetch-real
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: real
+          path: real
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.3"
+          usesh: true
+          prepare: pkg install -y python3
+          run: sh ci/expand-real.sh real imgs && sh ci/run-posix.sh imgs real-results-freebsd real/subtrees.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-results-freebsd
+          path: real-results-freebsd/

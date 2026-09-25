@@ -1,0 +1,6 @@
+out/
+imgs/
+results*/
+real/
+real-results*/
+__pycache__/
